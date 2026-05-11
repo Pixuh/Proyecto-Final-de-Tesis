@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16
+    platform: linux/amd64
+    container_name: proyecto_tesis_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-proyecto_tesis}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d proyecto_tesis"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./Backend
+    container_name: proyecto_tesis_backend
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-proyecto_tesis}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./Frontend
+    container_name: proyecto_tesis_frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
