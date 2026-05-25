@@ -1,11 +1,14 @@
 ﻿# Proyecto Tesis
 
-Proyecto fullstack compuesto por:
+Sistema fullstack para conteo de personas usando camara IP, backend API, base de datos y dashboard web.
+
+## Arquitectura actual
 
 - Frontend web con React + Vite
 - Backend/API con Node.js + Express
 - Base de datos PostgreSQL
-- Aplicacion movil React Native
+- Servicio Vision con Python + OpenCV
+- Aplicacion movil React Native en etapa inicial
 
 ## Requisitos
 
@@ -18,7 +21,7 @@ Para ejecutar el proyecto se necesita tener instalado:
 
 El proyecto incluye un archivo `.env.example` con las variables necesarias.
 
-Para esta entrega, el proyecto puede ejecutarse sin crear un archivo `.env`, ya que `docker-compose.yml` incluye valores por defecto.
+Para desarrollo inicial, el proyecto puede ejecutarse sin crear un archivo `.env`, ya que `docker-compose.yml` incluye valores por defecto. El servicio Vision quedara en espera si no se configura `CAMERA_RTSP_URL`.
 
 Variables disponibles:
 
@@ -32,6 +35,13 @@ BACKEND_PORT=
 FRONTEND_PORT=
 
 VITE_API_URL=
+
+CAMERA_RTSP_URL=
+CAMERA_ID=
+BACKEND_URL=
+VISION_CONFIDENCE=
+VISION_LINE_POSITION=
+VISION_DETECTION_INTERVAL=
 ```
 
 ## Ejecucion con Docker Compose
@@ -47,6 +57,7 @@ Esto levantara los siguientes servicios:
 - Base de datos PostgreSQL
 - Backend/API
 - Frontend web
+- Vision, servicio de procesamiento de camara
 
 ## Puertos
 
@@ -55,6 +66,80 @@ Una vez iniciado el proyecto, se puede acceder a:
 - Frontend web: http://localhost:5173
 - Backend/API: http://localhost:3001
 - PostgreSQL: localhost:5432
+
+## Endpoints principales
+
+Verificar salud del backend:
+
+```bash
+GET http://localhost:3001/health
+```
+
+Resumen de conteos:
+
+```bash
+GET http://localhost:3001/counts/summary
+```
+
+Eventos recientes:
+
+```bash
+GET http://localhost:3001/counts/events
+```
+
+Registrar un evento de conteo:
+
+```bash
+POST http://localhost:3001/counts/events
+```
+
+Ejemplo de cuerpo JSON:
+
+```json
+{
+  "cameraId": "camara_prueba",
+  "direction": "in",
+  "quantity": 1,
+  "metadata": {
+    "source": "manual-test"
+  }
+}
+```
+
+## Base de datos
+
+El backend crea automaticamente la tabla `count_events` al iniciar.
+
+Campos principales:
+
+- `id`
+- `camera_id`
+- `direction`
+- `quantity`
+- `occurred_at`
+- `metadata`
+
+Conexion sugerida en DataGrip:
+
+```text
+Host: localhost
+Port: 5432
+Database: proyecto_tesis
+User: postgres
+Password: postgres
+```
+
+## Camara IP
+
+El servicio Vision usa la variable `CAMERA_RTSP_URL` para conectarse a la camara IP.
+
+Ejemplo de formato RTSP:
+
+```text
+rtsp://usuario:clave@IP_DE_LA_CAMARA:554/ruta
+```
+
+Mientras no exista una URL RTSP configurada, Vision se mantiene en espera y no detiene el resto del sistema.
 
 ## Detener el proyecto
 
@@ -74,4 +159,4 @@ docker compose down
 
 La carpeta `Mobile` corresponde a la aplicacion movil desarrollada con React Native.
 
-La app movil no se levanta mediante Docker Compose en esta entrega. Debe ejecutarse desde el entorno correspondiente de React Native y conectarse al backend/API.
+La app movil no se levanta mediante Docker Compose en esta etapa. Debe ejecutarse desde el entorno correspondiente de React Native y conectarse al backend/API.

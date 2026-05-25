@@ -1,4 +1,4 @@
-services:
+﻿services:
   db:
     image: postgres:16
     platform: linux/amd64
@@ -42,6 +42,20 @@ services:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
     depends_on:
       - backend
+
+  vision:
+    build: ./Vision
+    container_name: proyecto_tesis_vision
+    environment:
+      CAMERA_RTSP_URL: ${CAMERA_RTSP_URL:-}
+      CAMERA_ID: ${CAMERA_ID:-main_camera}
+      BACKEND_URL: ${BACKEND_URL:-http://backend:3001}
+      VISION_CONFIDENCE: ${VISION_CONFIDENCE:-0.45}
+      VISION_LINE_POSITION: ${VISION_LINE_POSITION:-0.55}
+      VISION_DETECTION_INTERVAL: ${VISION_DETECTION_INTERVAL:-5}
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   postgres_data:

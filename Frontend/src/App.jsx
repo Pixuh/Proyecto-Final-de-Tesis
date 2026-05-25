@@ -1,121 +1,133 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+﻿import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [summary, setSummary] = useState({ total_in: 0, total_out: 0, current_inside: 0, events: 0 })
+  const [events, setEvents] = useState([])
+  const [status, setStatus] = useState('Conectando')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const lastEvent = useMemo(() => events[0], [events])
+
+  async function loadData() {
+    try {
+      const [summaryResponse, eventsResponse] = await Promise.all([
+        fetch(`${API_URL}/counts/summary`),
+        fetch(`${API_URL}/counts/events?limit=8`),
+      ])
+
+      if (!summaryResponse.ok || !eventsResponse.ok) {
+        throw new Error('API unavailable')
+      }
+
+      setSummary(await summaryResponse.json())
+      setEvents(await eventsResponse.json())
+      setStatus('En linea')
+    } catch {
+      setStatus('Sin conexion')
+    }
+  }
+
+  async function registerEvent(direction) {
+    setIsSaving(true)
+    try {
+      await fetch(`${API_URL}/counts/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cameraId: 'camara_prueba',
+          direction,
+          quantity: 1,
+          metadata: { source: 'dashboard-test' },
+        }),
+      })
+      await loadData()
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+    const interval = window.setInterval(loadData, 5000)
+    return () => window.clearInterval(interval)
+  }, [])
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
+    <main className="app-shell">
+      <header className="topbar">
         <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
+          <p className="eyebrow">Sistema de conteo</p>
+          <h1>Monitoreo de personas</h1>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
+        <div className={`status ${status === 'En linea' ? 'online' : 'offline'}`}>
+          {status}
+        </div>
+      </header>
+
+      <section className="metrics" aria-label="Resumen de conteo">
+        <article>
+          <span>Ingresos</span>
+          <strong>{summary.total_in}</strong>
+        </article>
+        <article>
+          <span>Salidas</span>
+          <strong>{summary.total_out}</strong>
+        </article>
+        <article>
+          <span>Dentro ahora</span>
+          <strong>{summary.current_inside}</strong>
+        </article>
+        <article>
+          <span>Eventos</span>
+          <strong>{summary.events}</strong>
+        </article>
       </section>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+      <section className="workspace">
+        <div className="panel video-panel">
+          <div className="camera-frame">
+            <div className="scan-line" />
+            <div className="camera-copy">
+              <span>Camara IP</span>
+              <strong>Esperando stream RTSP</strong>
+            </div>
+          </div>
+          <div className="actions">
+            <button type="button" onClick={() => registerEvent('in')} disabled={isSaving}>
+              Registrar ingreso
+            </button>
+            <button type="button" onClick={() => registerEvent('out')} disabled={isSaving}>
+              Registrar salida
+            </button>
+          </div>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
+
+        <div className="panel activity-panel">
+          <div className="panel-heading">
+            <h2>Actividad reciente</h2>
+            {lastEvent ? <span>Ultimo ID {lastEvent.id}</span> : <span>Sin eventos</span>}
+          </div>
+          <div className="event-list">
+            {events.length === 0 ? (
+              <p className="empty-state">Aun no hay eventos registrados.</p>
+            ) : (
+              events.map((event) => (
+                <div className="event-row" key={event.id}>
+                  <div>
+                    <strong>{event.direction === 'in' ? 'Ingreso' : 'Salida'}</strong>
+                    <span>{event.camera_id}</span>
+                  </div>
+                  <time>{new Date(event.occurred_at).toLocaleString()}</time>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    </main>
   )
 }
 
