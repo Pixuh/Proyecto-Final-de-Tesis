@@ -1,8 +1,10 @@
-﻿import os
+import os
+import subprocess
 import time
 from dataclasses import dataclass
 
 import cv2
+import numpy as np
 import requests
 
 
@@ -12,6 +14,9 @@ CAMERA_ID = os.getenv("CAMERA_ID", "main_camera")
 LINE_POSITION = float(os.getenv("VISION_LINE_POSITION", "0.55"))
 DETECTION_INTERVAL = int(os.getenv("VISION_DETECTION_INTERVAL", "5"))
 MIN_CONFIDENCE = float(os.getenv("VISION_CONFIDENCE", "0.45"))
+STREAM_WIDTH = int(os.getenv("VISION_STREAM_WIDTH", "640"))
+STREAM_HEIGHT = int(os.getenv("VISION_STREAM_HEIGHT", "360"))
+RTSP_TRANSPORT = os.getenv("VISION_RTSP_TRANSPORT", "udp")
 
 
 @dataclass
@@ -21,6 +26,71 @@ class Track:
   y: int
   last_seen: int
   counted: bool = False
+
+
+class FfmpegRtspStream:
+  def __init__(self, url):
+    self.url = url
+    self.process = None
+    self.frame_size = STREAM_WIDTH * STREAM_HEIGHT * 3
+
+  def open(self):
+    self.close()
+    input_options = []
+    if self.url.lower().startswith("rtsp://"):
+      input_options = ["-rtsp_transport", RTSP_TRANSPORT]
+
+    command = [
+      "ffmpeg",
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      *input_options,
+      "-i",
+      self.url,
+      "-an",
+      "-vf",
+      f"scale={STREAM_WIDTH}:{STREAM_HEIGHT}",
+      "-pix_fmt",
+      "bgr24",
+      "-f",
+      "rawvideo",
+      "pipe:1",
+    ]
+    self.process = subprocess.Popen(
+      command,
+      stdout=subprocess.PIPE,
+      stderr=subprocess.PIPE,
+      bufsize=self.frame_size * 2,
+    )
+    print(f"Intentando abrir stream de camara con ffmpeg: {self.source_label()}.", flush=True)
+
+  def source_label(self):
+    if self.url.lower().startswith("rtsp://"):
+      return f"rtsp/{RTSP_TRANSPORT}"
+    return "http/mjpeg"
+
+  def read(self):
+    if self.process is None or self.process.poll() is not None:
+      return False, None
+
+    raw_frame = self.process.stdout.read(self.frame_size)
+    if len(raw_frame) != self.frame_size:
+      return False, None
+
+    frame = np.frombuffer(raw_frame, dtype=np.uint8)
+    frame = frame.reshape((STREAM_HEIGHT, STREAM_WIDTH, 3))
+    return True, frame
+
+  def close(self):
+    if self.process is None:
+      return
+    self.process.terminate()
+    try:
+      self.process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+      self.process.kill()
+    self.process = None
 
 
 class CentroidTracker:
@@ -84,13 +154,15 @@ def wait_for_camera_url():
 
 
 def open_stream():
+  stream = FfmpegRtspStream(CAMERA_URL)
   while True:
-    capture = cv2.VideoCapture(CAMERA_URL)
-    if capture.isOpened():
+    stream.open()
+    ok, frame = stream.read()
+    if ok:
       print("Stream de camara conectado.", flush=True)
-      return capture
-    print("No se pudo abrir la camara. Reintentando en 10 segundos.", flush=True)
-    capture.release()
+      return stream, frame
+    print("No se pudo leer el primer frame. Reintentando en 10 segundos.", flush=True)
+    stream.close()
     time.sleep(10)
 
 
@@ -102,15 +174,20 @@ def main():
   tracker = CentroidTracker()
   last_positions = {}
   frame_index = 0
-  capture = open_stream()
+  stream, pending_frame = open_stream()
 
   while True:
-    ok, frame = capture.read()
+    if pending_frame is not None:
+      ok, frame = True, pending_frame
+      pending_frame = None
+    else:
+      ok, frame = stream.read()
+
     if not ok:
       print("Frame no disponible. Reconectando stream.", flush=True)
-      capture.release()
+      stream.close()
       time.sleep(5)
-      capture = open_stream()
+      stream, pending_frame = open_stream()
       continue
 
     frame_index += 1
@@ -119,16 +196,13 @@ def main():
 
     height, width = frame.shape[:2]
     line_y = int(height * LINE_POSITION)
-    resized = cv2.resize(frame, (640, int(height * 640 / width)))
-    scale_y = height / resized.shape[0]
-    scale_x = width / resized.shape[1]
 
-    boxes, weights = hog.detectMultiScale(resized, winStride=(8, 8), padding=(8, 8), scale=1.05)
+    boxes, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
     detections = []
     for (x, y, w, h), confidence in zip(boxes, weights):
       if float(confidence) < MIN_CONFIDENCE:
         continue
-      detections.append((int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y)))
+      detections.append((int(x), int(y), int(w), int(h)))
 
     for track in tracker.update(detections, frame_index):
       previous_y = last_positions.get(track.track_id)

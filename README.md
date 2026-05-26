@@ -141,6 +141,33 @@ rtsp://usuario:clave@IP_DE_LA_CAMARA:554/ruta
 
 Mientras no exista una URL RTSP configurada, Vision se mantiene en espera y no detiene el resto del sistema.
 
+### Camaras Yoosee con puente VLC
+
+Algunas camaras Yoosee entregan RTSP en H.265 y pueden fallar al ser leidas directamente por ffmpeg/OpenCV dentro de Docker. En ese caso se puede usar VLC como puente local:
+
+```powershell
+Start-Process -FilePath "C:\Program Files\VideoLAN\VLC\vlc.exe" -ArgumentList @(
+  "-I", "dummy",
+  "rtsp://admin:admin123@IP_DE_LA_CAMARA:554/onvif1",
+  "--sout", "#transcode{vcodec=MJPG,vb=2000,scale=1}:standard{access=http,mux=mpjpeg,dst=:8090/stream.mjpg}",
+  "--no-sout-all",
+  "--sout-keep"
+) -WindowStyle Hidden
+```
+
+Luego configurar el stream consumido por Docker:
+
+```env
+CAMERA_RTSP_URL=http://host.docker.internal:8090/stream.mjpg
+CAMERA_ID=garaje
+```
+
+Para verificar que VLC esta publicando el puente:
+
+```powershell
+Test-NetConnection 127.0.0.1 -Port 8090
+```
+
 ## Detener el proyecto
 
 Para detener los contenedores, presionar:

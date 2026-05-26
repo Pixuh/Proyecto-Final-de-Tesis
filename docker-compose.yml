@@ -8,7 +8,7 @@
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -53,9 +53,13 @@
       VISION_CONFIDENCE: ${VISION_CONFIDENCE:-0.45}
       VISION_LINE_POSITION: ${VISION_LINE_POSITION:-0.55}
       VISION_DETECTION_INTERVAL: ${VISION_DETECTION_INTERVAL:-5}
+      VISION_RTSP_TRANSPORT: ${VISION_RTSP_TRANSPORT:-udp}
+      VISION_STREAM_WIDTH: ${VISION_STREAM_WIDTH:-640}
+      VISION_STREAM_HEIGHT: ${VISION_STREAM_HEIGHT:-360}
     depends_on:
       - backend
     restart: unless-stopped
 
 volumes:
   postgres_data:
+
