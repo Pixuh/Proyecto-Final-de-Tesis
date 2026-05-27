@@ -40,22 +40,27 @@
       - "${FRONTEND_PORT:-5173}:5173"
     environment:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+      VITE_VISION_URL: ${VITE_VISION_URL:-http://localhost:5001}
     depends_on:
       - backend
 
   vision:
     build: ./Vision
     container_name: proyecto_tesis_vision
+    ports:
+      - "${VISION_PORT:-5001}:5001"
     environment:
       CAMERA_RTSP_URL: ${CAMERA_RTSP_URL:-}
       CAMERA_ID: ${CAMERA_ID:-main_camera}
       BACKEND_URL: ${BACKEND_URL:-http://backend:3001}
+      VISION_PORT: 5001
       VISION_CONFIDENCE: ${VISION_CONFIDENCE:-0.45}
       VISION_LINE_POSITION: ${VISION_LINE_POSITION:-0.55}
       VISION_DETECTION_INTERVAL: ${VISION_DETECTION_INTERVAL:-5}
       VISION_RTSP_TRANSPORT: ${VISION_RTSP_TRANSPORT:-udp}
       VISION_STREAM_WIDTH: ${VISION_STREAM_WIDTH:-640}
       VISION_STREAM_HEIGHT: ${VISION_STREAM_HEIGHT:-360}
+      VISION_DEMO_MIN_BOXES: ${VISION_DEMO_MIN_BOXES:-0}
     depends_on:
       - backend
     restart: unless-stopped

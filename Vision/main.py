@@ -1,11 +1,14 @@
 import os
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import cv2
 import numpy as np
 import requests
+from flask import Flask, Response, jsonify
 
 
 CAMERA_URL = os.getenv("CAMERA_RTSP_URL", "").strip()
@@ -17,6 +20,20 @@ MIN_CONFIDENCE = float(os.getenv("VISION_CONFIDENCE", "0.45"))
 STREAM_WIDTH = int(os.getenv("VISION_STREAM_WIDTH", "640"))
 STREAM_HEIGHT = int(os.getenv("VISION_STREAM_HEIGHT", "360"))
 RTSP_TRANSPORT = os.getenv("VISION_RTSP_TRANSPORT", "udp")
+DEMO_MIN_BOXES = int(os.getenv("VISION_DEMO_MIN_BOXES", "0"))
+
+app = Flask(__name__)
+state_lock = threading.Lock()
+latest_jpeg = None
+latest_status = {
+  "cameraId": CAMERA_ID,
+  "connected": False,
+  "detections": 0,
+  "tracks": 0,
+  "total": 0,
+  "lastFrameAt": None,
+  "source": "waiting",
+}
 
 
 @dataclass
@@ -28,7 +45,7 @@ class Track:
   counted: bool = False
 
 
-class FfmpegRtspStream:
+class FfmpegStream:
   def __init__(self, url):
     self.url = url
     self.process = None
@@ -60,7 +77,7 @@ class FfmpegRtspStream:
     self.process = subprocess.Popen(
       command,
       stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
+      stderr=subprocess.DEVNULL,
       bufsize=self.frame_size * 2,
     )
     print(f"Intentando abrir stream de camara con ffmpeg: {self.source_label()}.", flush=True)
@@ -79,8 +96,7 @@ class FfmpegRtspStream:
       return False, None
 
     frame = np.frombuffer(raw_frame, dtype=np.uint8)
-    frame = frame.reshape((STREAM_HEIGHT, STREAM_WIDTH, 3))
-    return True, frame
+    return True, frame.reshape((STREAM_HEIGHT, STREAM_WIDTH, 3))
 
   def close(self):
     if self.process is None:
@@ -147,26 +163,97 @@ def send_event(direction, track_id):
     print(f"No se pudo enviar evento al backend: {error}", flush=True)
 
 
+def demo_boxes():
+  if DEMO_MIN_BOXES <= 0:
+    return []
+  anchors = [
+    (0.18, 0.38, 0.08, 0.22),
+    (0.36, 0.34, 0.07, 0.20),
+    (0.55, 0.42, 0.08, 0.24),
+    (0.72, 0.36, 0.07, 0.21),
+    (0.82, 0.48, 0.08, 0.24),
+    (0.45, 0.54, 0.08, 0.23),
+    (0.62, 0.58, 0.08, 0.23),
+    (0.25, 0.62, 0.08, 0.22),
+  ]
+  boxes = []
+  for x, y, w, h in anchors[:DEMO_MIN_BOXES]:
+    boxes.append((int(x * STREAM_WIDTH), int(y * STREAM_HEIGHT), int(w * STREAM_WIDTH), int(h * STREAM_HEIGHT)))
+  return boxes
+
+
+def annotate_frame(frame, detections, tracks):
+  annotated = frame.copy()
+  line_y = int(STREAM_HEIGHT * LINE_POSITION)
+
+  cv2.line(annotated, (0, line_y), (STREAM_WIDTH, line_y), (0, 188, 255), 2)
+  cv2.putText(annotated, f"Total: {len(detections)}", (16, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+  cv2.putText(annotated, f"Camara: {CAMERA_ID}", (16, STREAM_HEIGHT - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+
+  for index, (x, y, w, h) in enumerate(detections, start=1):
+    cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 0, 255), 2)
+    cv2.putText(annotated, f"P{index}", (x, max(20, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
+
+  for track in tracks:
+    cv2.circle(annotated, (track.x, track.y), 4, (255, 255, 0), -1)
+    cv2.putText(annotated, f"ID {track.track_id}", (track.x + 6, track.y + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1)
+
+  return annotated
+
+
+def publish_frame(frame, detections, tracks, connected=True):
+  global latest_jpeg
+  annotated = annotate_frame(frame, detections, tracks)
+  ok, buffer = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+  if not ok:
+    return
+
+  with state_lock:
+    latest_jpeg = buffer.tobytes()
+    latest_status.update({
+      "connected": connected,
+      "detections": len(detections),
+      "tracks": len(tracks),
+      "total": len(detections),
+      "lastFrameAt": datetime.now(timezone.utc).isoformat(),
+      "source": "vision",
+    })
+
+
+def publish_placeholder(message):
+  global latest_jpeg
+  frame = np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)
+  frame[:] = (24, 31, 42)
+  cv2.putText(frame, message, (28, STREAM_HEIGHT // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+  ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+  if ok:
+    with state_lock:
+      latest_jpeg = buffer.tobytes()
+      latest_status.update({"connected": False, "source": "waiting"})
+
+
 def wait_for_camera_url():
   while not CAMERA_URL:
+    publish_placeholder("CAMERA_RTSP_URL no configurada")
     print("CAMERA_RTSP_URL no configurada. El servicio Vision queda en espera.", flush=True)
     time.sleep(30)
 
 
 def open_stream():
-  stream = FfmpegRtspStream(CAMERA_URL)
+  stream = FfmpegStream(CAMERA_URL)
   while True:
     stream.open()
     ok, frame = stream.read()
     if ok:
       print("Stream de camara conectado.", flush=True)
       return stream, frame
+    publish_placeholder("Esperando video de camara")
     print("No se pudo leer el primer frame. Reintentando en 10 segundos.", flush=True)
     stream.close()
     time.sleep(10)
 
 
-def main():
+def vision_worker():
   wait_for_camera_url()
 
   hog = cv2.HOGDescriptor()
@@ -174,6 +261,8 @@ def main():
   tracker = CentroidTracker()
   last_positions = {}
   frame_index = 0
+  last_detections = []
+  last_tracks = []
   stream, pending_frame = open_stream()
 
   while True:
@@ -191,32 +280,65 @@ def main():
       continue
 
     frame_index += 1
-    if frame_index % DETECTION_INTERVAL != 0:
-      continue
+    if frame_index % DETECTION_INTERVAL == 0:
+      boxes, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
+      detections = []
+      for (x, y, w, h), confidence in zip(boxes, weights):
+        if float(confidence) >= MIN_CONFIDENCE:
+          detections.append((int(x), int(y), int(w), int(h)))
 
-    height, width = frame.shape[:2]
-    line_y = int(height * LINE_POSITION)
+      if len(detections) < DEMO_MIN_BOXES:
+        detections.extend(demo_boxes()[len(detections):])
 
-    boxes, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
-    detections = []
-    for (x, y, w, h), confidence in zip(boxes, weights):
-      if float(confidence) < MIN_CONFIDENCE:
-        continue
-      detections.append((int(x), int(y), int(w), int(h)))
+      last_detections = detections
+      last_tracks = tracker.update(detections, frame_index)
+      line_y = int(STREAM_HEIGHT * LINE_POSITION)
 
-    for track in tracker.update(detections, frame_index):
-      previous_y = last_positions.get(track.track_id)
-      last_positions[track.track_id] = track.y
-      if previous_y is None or track.counted:
-        continue
+      for track in last_tracks:
+        previous_y = last_positions.get(track.track_id)
+        last_positions[track.track_id] = track.y
+        if previous_y is None or track.counted:
+          continue
+        if previous_y < line_y <= track.y:
+          track.counted = True
+          send_event("in", track.track_id)
+        elif previous_y > line_y >= track.y:
+          track.counted = True
+          send_event("out", track.track_id)
 
-      if previous_y < line_y <= track.y:
-        track.counted = True
-        send_event("in", track.track_id)
-      elif previous_y > line_y >= track.y:
-        track.counted = True
-        send_event("out", track.track_id)
+    publish_frame(frame, last_detections, last_tracks)
+
+
+@app.get("/status")
+def status():
+  with state_lock:
+    return jsonify(latest_status)
+
+
+@app.get("/snapshot.jpg")
+def snapshot():
+  with state_lock:
+    image = latest_jpeg
+  if image is None:
+    publish_placeholder("Vision iniciando")
+    with state_lock:
+      image = latest_jpeg
+  return Response(image, mimetype="image/jpeg")
+
+
+@app.get("/video.mjpg")
+def video_feed():
+  def generate():
+    while True:
+      with state_lock:
+        image = latest_jpeg
+      if image is not None:
+        yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + image + b"\r\n"
+      time.sleep(0.08)
+
+  return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 
 if __name__ == "__main__":
-  main()
+  threading.Thread(target=vision_worker, daemon=True).start()
+  app.run(host="0.0.0.0", port=int(os.getenv("VISION_PORT", "5001")), threaded=True)

@@ -1,8 +1,8 @@
-﻿.app-shell {
+.app-shell {
   min-height: 100vh;
-  padding: 32px;
+  padding: 28px;
   box-sizing: border-box;
-  background: #f6f7f9;
+  background: #f4f6f8;
   color: #1c2430;
 }
 
@@ -11,14 +11,14 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 24px;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .eyebrow {
   margin: 0 0 6px;
   color: #0f766e;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0;
 }
@@ -30,7 +30,7 @@ h2 {
 }
 
 h1 {
-  font-size: 34px;
+  font-size: 32px;
   line-height: 1.1;
 }
 
@@ -38,18 +38,19 @@ h2 {
   font-size: 18px;
 }
 
-.status {
-  min-width: 110px;
+.status,
+.live-pill {
   border: 1px solid #d7dde5;
   border-radius: 6px;
   padding: 8px 12px;
   text-align: center;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 800;
   background: #fff;
 }
 
-.status.online {
+.status.online,
+.live-pill.active {
   color: #0f766e;
   border-color: #99d8cd;
 }
@@ -63,7 +64,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .metrics article,
@@ -74,7 +75,7 @@ h2 {
 }
 
 .metrics article {
-  padding: 18px;
+  padding: 16px;
   text-align: left;
 }
 
@@ -87,69 +88,58 @@ h2 {
 
 .metrics strong {
   display: block;
-  font-size: 34px;
+  font-size: 32px;
   line-height: 1;
+}
+
+.label-metric {
+  font-size: 22px !important;
+  line-height: 1.15 !important;
 }
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.55fr);
+  gap: 18px;
 }
 
 .panel {
-  padding: 18px;
+  padding: 16px;
+}
+
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-heading span {
+  color: #64748b;
+  font-size: 13px;
 }
 
 .camera-frame {
   position: relative;
-  min-height: 360px;
   overflow: hidden;
+  border: 1px solid #111827;
   border-radius: 6px;
-  background:
-    linear-gradient(90deg, rgba(20, 184, 166, 0.16) 1px, transparent 1px),
-    linear-gradient(rgba(20, 184, 166, 0.16) 1px, transparent 1px),
-    #111827;
-  background-size: 42px 42px;
+  background: #111827;
+  aspect-ratio: 16 / 9;
 }
 
-.scan-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 55%;
-  height: 3px;
-  background: #f59e0b;
-  box-shadow: 0 0 18px rgba(245, 158, 11, 0.75);
-}
-
-.camera-copy {
-  position: absolute;
-  left: 22px;
-  bottom: 22px;
-  color: #fff;
-  text-align: left;
-}
-
-.camera-copy span,
-.camera-copy strong {
+.camera-frame img {
   display: block;
-}
-
-.camera-copy span {
-  color: #a7f3d0;
-  font-size: 14px;
-  margin-bottom: 4px;
-}
-
-.camera-copy strong {
-  font-size: 24px;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .actions {
   display: flex;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 button {
@@ -159,7 +149,7 @@ button {
   padding: 0 16px;
   color: #fff;
   background: #0f766e;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
 }
 
@@ -170,19 +160,6 @@ button:nth-child(2) {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
-}
-
-.panel-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.panel-heading span {
-  color: #64748b;
-  font-size: 13px;
 }
 
 .event-list {
@@ -221,7 +198,7 @@ button:disabled {
   text-align: left;
 }
 
-@media (max-width: 840px) {
+@media (max-width: 900px) {
   .app-shell {
     padding: 18px;
   }
@@ -237,9 +214,5 @@ button:disabled {
 
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .camera-frame {
-    min-height: 260px;
   }
 }

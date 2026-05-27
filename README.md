@@ -168,6 +168,22 @@ Para verificar que VLC esta publicando el puente:
 Test-NetConnection 127.0.0.1 -Port 8090
 ```
 
+El servicio Vision publica una salida visual para el dashboard:
+
+```text
+http://localhost:5001/video.mjpg
+http://localhost:5001/snapshot.jpg
+http://localhost:5001/status
+```
+
+Para una demostracion visual con mas cajas de deteccion se puede usar:
+
+```env
+VISION_DEMO_MIN_BOXES=6
+```
+
+Esta variable solo fuerza una cantidad minima de cajas visuales para presentacion. Para mediciones reales debe mantenerse en `0`.
+
 ## Detener el proyecto
 
 Para detener los contenedores, presionar:
