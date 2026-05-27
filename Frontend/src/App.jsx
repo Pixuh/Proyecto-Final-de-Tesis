@@ -12,7 +12,8 @@ function App() {
   const [isSaving, setIsSaving] = useState(false)
 
   const lastEvent = useMemo(() => events[0], [events])
-  const occupancyLabel = summary.current_inside > 0 ? 'Con movimiento' : 'Disponible'
+  const liveDetections = vision.detections ?? 0
+  const occupancyLabel = liveDetections > 0 ? 'Con movimiento' : 'Disponible'
 
   async function loadData() {
     try {
@@ -56,7 +57,7 @@ function App() {
 
   useEffect(() => {
     loadData()
-    const interval = window.setInterval(loadData, 3000)
+    const interval = window.setInterval(loadData, 1000)
     return () => window.clearInterval(interval)
   }, [])
 
@@ -75,7 +76,7 @@ function App() {
       <section className="metrics" aria-label="Resumen de conteo">
         <article>
           <span>Personas detectadas</span>
-          <strong>{vision.detections ?? 0}</strong>
+          <strong>{liveDetections}</strong>
         </article>
         <article>
           <span>Ingresos</span>
