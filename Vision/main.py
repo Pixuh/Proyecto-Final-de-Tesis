@@ -21,8 +21,23 @@ STREAM_WIDTH = int(os.getenv("VISION_STREAM_WIDTH", "640"))
 STREAM_HEIGHT = int(os.getenv("VISION_STREAM_HEIGHT", "360"))
 RTSP_TRANSPORT = os.getenv("VISION_RTSP_TRANSPORT", "udp")
 DEMO_MIN_BOXES = int(os.getenv("VISION_DEMO_MIN_BOXES", "0"))
+DETECTOR_NAME = os.getenv("VISION_DETECTOR", "yolo").strip().lower()
+YOLO_MODEL = os.getenv("YOLO_MODEL", "yolo11n.pt").strip()
+YOLO_CONFIDENCE = float(os.getenv("YOLO_CONFIDENCE", str(MIN_CONFIDENCE)))
+YOLO_IMAGE_SIZE = int(os.getenv("YOLO_IMAGE_SIZE", "416"))
+YOLO_DEVICE = os.getenv("YOLO_DEVICE", "cpu").strip()
 
 app = Flask(__name__)
+
+
+@app.after_request
+def add_cors_headers(response):
+  response.headers["Access-Control-Allow-Origin"] = "*"
+  response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+  response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+  return response
+
+
 state_lock = threading.Lock()
 latest_jpeg = None
 latest_status = {
@@ -33,6 +48,12 @@ latest_status = {
   "total": 0,
   "lastFrameAt": None,
   "source": "waiting",
+  "detector": DETECTOR_NAME,
+  "model": YOLO_MODEL if DETECTOR_NAME == "yolo" else "opencv-hog",
+}
+detector_status = {
+  "name": DETECTOR_NAME,
+  "model": YOLO_MODEL if DETECTOR_NAME == "yolo" else "opencv-hog",
 }
 
 
@@ -148,6 +169,85 @@ class CentroidTracker:
     return list(self.tracks.values())
 
 
+class HogPersonDetector:
+  name = "hog"
+  model_name = "opencv-hog"
+
+  def __init__(self):
+    self.hog = cv2.HOGDescriptor()
+    self.hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+
+  def detect(self, frame):
+    boxes, weights = self.hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
+    detections = []
+    for (x, y, w, h), confidence in zip(boxes, weights):
+      if float(confidence) >= MIN_CONFIDENCE:
+        detections.append((int(x), int(y), int(w), int(h)))
+    return detections
+
+
+class YoloPersonDetector:
+  name = "yolo"
+
+  def __init__(self):
+    from ultralytics import YOLO
+
+    self.model_name = YOLO_MODEL
+    self.model = YOLO(YOLO_MODEL)
+    print(
+      f"Detector YOLO cargado: model={YOLO_MODEL}, conf={YOLO_CONFIDENCE}, imgsz={YOLO_IMAGE_SIZE}, device={YOLO_DEVICE or 'auto'}.",
+      flush=True,
+    )
+
+  def detect(self, frame):
+    kwargs = {
+      "source": frame,
+      "classes": [0],
+      "conf": YOLO_CONFIDENCE,
+      "imgsz": YOLO_IMAGE_SIZE,
+      "verbose": False,
+    }
+    if YOLO_DEVICE:
+      kwargs["device"] = YOLO_DEVICE
+
+    results = self.model.predict(**kwargs)
+    detections = []
+    if not results:
+      return detections
+
+    result = results[0]
+    if result.boxes is None:
+      return detections
+
+    for box in result.boxes:
+      x1, y1, x2, y2 = box.xyxy[0].tolist()
+      x = max(0, int(x1))
+      y = max(0, int(y1))
+      w = min(STREAM_WIDTH - x, int(x2 - x1))
+      h = min(STREAM_HEIGHT - y, int(y2 - y1))
+      if w > 0 and h > 0:
+        detections.append((x, y, w, h))
+    return detections
+
+
+def build_detector():
+  global detector_status
+
+  if DETECTOR_NAME == "hog":
+    print("Detector activo: OpenCV HOG.", flush=True)
+    detector_status = {"name": "hog", "model": "opencv-hog"}
+    return HogPersonDetector()
+
+  try:
+    detector = YoloPersonDetector()
+    detector_status = {"name": detector.name, "model": detector.model_name}
+    return detector
+  except Exception as error:
+    print(f"No se pudo cargar YOLO ({error}). Usando OpenCV HOG como respaldo.", flush=True)
+    detector_status = {"name": "hog", "model": "opencv-hog"}
+    return HogPersonDetector()
+
+
 def send_event(direction, track_id):
   payload = {
     "cameraId": CAMERA_ID,
@@ -217,6 +317,8 @@ def publish_frame(frame, detections, tracks, connected=True):
       "total": len(detections),
       "lastFrameAt": datetime.now(timezone.utc).isoformat(),
       "source": "vision",
+      "detector": detector_status.get("name", DETECTOR_NAME),
+      "model": detector_status.get("model", YOLO_MODEL),
     })
 
 
@@ -256,8 +358,7 @@ def open_stream():
 def vision_worker():
   wait_for_camera_url()
 
-  hog = cv2.HOGDescriptor()
-  hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+  detector = build_detector()
   tracker = CentroidTracker()
   last_positions = {}
   frame_index = 0
@@ -281,11 +382,11 @@ def vision_worker():
 
     frame_index += 1
     if frame_index % DETECTION_INTERVAL == 0:
-      boxes, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
-      detections = []
-      for (x, y, w, h), confidence in zip(boxes, weights):
-        if float(confidence) >= MIN_CONFIDENCE:
-          detections.append((int(x), int(y), int(w), int(h)))
+      try:
+        detections = detector.detect(frame)
+      except Exception as error:
+        print(f"Error ejecutando detector {detector_status.get('name')}: {error}", flush=True)
+        detections = last_detections
 
       if len(detections) < DEMO_MIN_BOXES:
         detections.extend(demo_boxes()[len(detections):])

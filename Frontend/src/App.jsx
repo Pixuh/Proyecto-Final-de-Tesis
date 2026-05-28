@@ -16,22 +16,45 @@ function App() {
   const occupancyLabel = liveDetections > 0 ? 'Con movimiento' : 'Disponible'
 
   async function loadData() {
+    let backendOnline = false
+    let visionOnline = false
+
     try {
-      const [summaryResponse, eventsResponse, visionResponse] = await Promise.all([
-        fetch(`${API_URL}/counts/summary`),
-        fetch(`${API_URL}/counts/events?limit=8`),
-        fetch(`${VISION_URL}/status`),
-      ])
-
-      if (!summaryResponse.ok || !eventsResponse.ok || !visionResponse.ok) {
-        throw new Error('API unavailable')
+      const summaryResponse = await fetch(`${API_URL}/counts/summary`)
+      if (summaryResponse.ok) {
+        setSummary(await summaryResponse.json())
+        backendOnline = true
       }
-
-      setSummary(await summaryResponse.json())
-      setEvents(await eventsResponse.json())
-      setVision(await visionResponse.json())
-      setStatus('En linea')
     } catch {
+      backendOnline = false
+    }
+
+    try {
+      const eventsResponse = await fetch(`${API_URL}/counts/events?limit=8`)
+      if (eventsResponse.ok) {
+        setEvents(await eventsResponse.json())
+        backendOnline = true
+      }
+    } catch {
+      backendOnline = false
+    }
+
+    try {
+      const visionResponse = await fetch(`${VISION_URL}/status`)
+      if (visionResponse.ok) {
+        const visionData = await visionResponse.json()
+        setVision(visionData)
+        visionOnline = Boolean(visionData.connected)
+      }
+    } catch {
+      visionOnline = false
+    }
+
+    if (visionOnline && backendOnline) {
+      setStatus('En linea')
+    } else if (visionOnline) {
+      setStatus('Vision activa')
+    } else {
       setStatus('Sin conexion')
     }
   }

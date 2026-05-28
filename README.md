@@ -7,7 +7,7 @@ Sistema fullstack para conteo de personas usando camara IP, backend API, base de
 - Frontend web con React + Vite
 - Backend/API con Node.js + Express
 - Base de datos PostgreSQL
-- Servicio Vision con Python + OpenCV
+- Servicio Vision con Python + OpenCV + YOLO
 - Aplicacion movil React Native en etapa inicial
 
 ## Requisitos
@@ -42,6 +42,11 @@ BACKEND_URL=
 VISION_CONFIDENCE=
 VISION_LINE_POSITION=
 VISION_DETECTION_INTERVAL=
+VISION_DETECTOR=
+YOLO_MODEL=
+YOLO_CONFIDENCE=
+YOLO_IMAGE_SIZE=
+YOLO_DEVICE=
 ```
 
 ## Ejecucion con Docker Compose
@@ -183,6 +188,21 @@ VISION_DEMO_MIN_BOXES=6
 ```
 
 Esta variable solo fuerza una cantidad minima de cajas visuales para presentacion. Para mediciones reales debe mantenerse en `0`.
+
+### Detector recomendado para demostracion
+
+Para la presentacion se recomienda usar YOLO, ya que detecta personas con mucha mayor estabilidad que el detector HOG clasico de OpenCV:
+
+```env
+VISION_DETECTOR=yolo
+YOLO_MODEL=yolo11n.pt
+YOLO_CONFIDENCE=0.25
+YOLO_IMAGE_SIZE=416
+YOLO_DEVICE=cpu
+VISION_DETECTION_INTERVAL=3
+```
+
+Si el equipo queda lento, subir `VISION_DETECTION_INTERVAL` a `5` o bajar `YOLO_IMAGE_SIZE` a `320`. Si YOLO no logra cargar, el servicio usa OpenCV HOG como respaldo para que la aplicacion no se detenga.
 
 ## Detener el proyecto
 
